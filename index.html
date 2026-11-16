@@ -6,57 +6,140 @@
 <title>试剂柜 Web 管控中心</title>
 <script src="mqtt.min.js"></script>
 <style>
-  :root {
-    --bg: #0f172a; --card: #1e293b; --line: #334155; --text: #e2e8f0;
-    --sub: #94a3b8; --ok: #22c55e; --warn: #f59e0b; --bad: #ef4444; --info: #38bdf8;
+  :root{
+    --bg:#05070f;
+    --glass:rgba(255,255,255,.055);
+    --glass-strong:rgba(255,255,255,.09);
+    --line:rgba(255,255,255,.12);
+    --line-soft:rgba(255,255,255,.07);
+    --text:#e8edf7;
+    --sub:#93a1b8;
+    --cyan:#22d3ee;
+    --violet:#8b5cf6;
+    --pink:#f472b6;
+    --green:#34d399;
+    --red:#f87171;
+    --amber:#fbbf24;
+    --orange:#fb923c;
+    --grad:linear-gradient(120deg,var(--cyan),var(--violet) 55%,var(--pink));
   }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text);
-         font-family: system-ui, "Microsoft YaHei", sans-serif; }
-  header { display: flex; align-items: center; justify-content: space-between;
-           padding: 14px 20px; border-bottom: 1px solid var(--line); }
-  header h1 { font-size: 18px; margin: 0; }
-  .badges { display: flex; gap: 10px; font-size: 13px; }
-  .badge { padding: 4px 12px; border-radius: 999px; background: #0b1220;
-           border: 1px solid var(--line); color: var(--sub); }
-  .badge.on { color: var(--ok); border-color: var(--ok); }
-  .badge.off { color: var(--bad); border-color: var(--bad); }
-  main { padding: 16px 20px; display: grid; gap: 16px; }
-  .cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
-  .card .num { font-size: 26px; font-weight: 700; margin-top: 2px; }
-  .card .lbl { font-size: 12px; color: var(--sub); }
-  .row { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
-  @media (max-width: 1000px) { .row { grid-template-columns: 1fr; } .cards { grid-template-columns: repeat(2,1fr); } }
-  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
-  .panel h2 { font-size: 14px; margin: 0; padding: 10px 14px; border-bottom: 1px solid var(--line); color: var(--sub); }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid #263244; white-space: nowrap; }
-  th { color: var(--sub); font-weight: 500; position: sticky; top: 0; background: var(--card); }
-  .scroll { max-height: 420px; overflow: auto; }
-  .tag { padding: 2px 8px; border-radius: 6px; font-size: 12px; }
-  .tag.ok { background: rgba(34,197,94,.15); color: var(--ok); }
-  .tag.deny { background: rgba(239,68,68,.15); color: var(--bad); }
-  .tag.late { background: rgba(245,158,11,.15); color: var(--warn); }
-  .alert-item { padding: 10px 14px; border-bottom: 1px solid #263244; font-size: 13px; display: flex; gap: 10px; }
-  .alert-item .lv { flex: none; padding: 2px 8px; border-radius: 6px; font-size: 12px; }
-  .lv0 { background: rgba(56,189,248,.15); color: var(--info); }
-  .lv1 { background: rgba(245,158,11,.18); color: var(--warn); }
-  .lv2 { background: rgba(249,115,22,.2); color: #fb923c; }
-  .lv3 { background: rgba(239,68,68,.22); color: var(--bad); }
-  .muted { color: var(--sub); }
-  .empty { padding: 26px 14px; color: var(--sub); font-size: 13px; text-align: center; }
-  footer { padding: 10px 20px 24px; font-size: 12px; color: var(--sub); }
-  input { background: #0b1220; border: 1px solid var(--line); color: var(--text);
-          border-radius: 8px; padding: 5px 10px; font-size: 13px; }
-  button { background: #2563eb; color: #fff; border: 0; border-radius: 8px;
-           padding: 6px 14px; font-size: 13px; cursor: pointer; }
-  button:hover { background: #1d4ed8; }
+  *{box-sizing:border-box}
+  body{margin:0;color:var(--text);min-height:100vh;overflow-x:hidden;
+    font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+    background:var(--bg)}
+  .aurora{position:fixed;inset:0;z-index:-2;overflow:hidden}
+  .aurora i{position:absolute;display:block;border-radius:50%;filter:blur(110px);opacity:.45;animation:drift 20s ease-in-out infinite alternate}
+  .aurora i:nth-child(1){width:46vw;height:46vw;left:-14vw;top:-18vw;background:#0ea5e9;animation-delay:-3s}
+  .aurora i:nth-child(2){width:40vw;height:40vw;right:-12vw;top:8vh;background:#7c3aed;animation-delay:-9s}
+  .aurora i:nth-child(3){width:36vw;height:36vw;left:24vw;bottom:-22vh;background:#db2777;opacity:.3;animation-delay:-14s}
+  @keyframes drift{from{transform:translate3d(0,0,0) scale(1)}to{transform:translate3d(5vw,4vh,0) scale(1.1)}}
+  .grid{position:fixed;inset:0;z-index:-1;pointer-events:none;
+    background-image:linear-gradient(rgba(255,255,255,.04) 1px,transparent 1px),
+                     linear-gradient(90deg,rgba(255,255,255,.04) 1px,transparent 1px);
+    background-size:46px 46px;
+    mask-image:radial-gradient(ellipse at 50% 0%,#000 25%,transparent 70%);
+    -webkit-mask-image:radial-gradient(ellipse at 50% 0%,#000 25%,transparent 70%)}
+
+  header{display:flex;align-items:center;justify-content:space-between;gap:14px;
+    padding:16px 22px;border-bottom:1px solid var(--line-soft);
+    background:rgba(5,7,15,.55);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    position:sticky;top:0;z-index:10}
+  .brand{display:flex;align-items:center;gap:12px}
+  .logo{width:40px;height:40px;border-radius:13px;display:grid;place-items:center;font-size:20px;
+    background:linear-gradient(145deg,rgba(34,211,238,.25),rgba(139,92,246,.3));
+    border:1px solid rgba(140,190,255,.35);box-shadow:0 0 22px rgba(56,189,248,.3), inset 0 0 10px rgba(255,255,255,.07)}
+  header h1{font-size:17px;margin:0;letter-spacing:.4px;
+    background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{font-size:11px;color:var(--sub);margin-top:1px}
+  .badges{display:flex;gap:10px;font-size:12.5px;flex-wrap:wrap}
+  .badge{display:inline-flex;align-items:center;gap:7px;padding:7px 14px;border-radius:999px;
+    background:var(--glass);border:1px solid var(--line);color:var(--sub);
+    transition:all .3s}
+  .badge::before{content:"";width:8px;height:8px;border-radius:50%;background:#64748b;transition:all .3s}
+  .badge.on{color:var(--green);border-color:rgba(52,211,153,.4);box-shadow:0 0 18px rgba(52,211,153,.18)}
+  .badge.on::before{background:var(--green);box-shadow:0 0 10px var(--green);animation:pulse 2s infinite}
+  .badge.off{color:var(--red);border-color:rgba(248,113,113,.4)}
+  .badge.off::before{background:var(--red);box-shadow:0 0 10px var(--red)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+  main{padding:20px 22px 10px;display:grid;gap:16px;max-width:1500px;margin:0 auto}
+  .toolbar{display:flex;gap:10px;align-items:center;font-size:13px;color:var(--sub);flex-wrap:wrap}
+  input{background:rgba(8,12,24,.7);border:1px solid var(--line);color:var(--text);
+    border-radius:11px;padding:9px 12px;font-size:13px;outline:none;transition:border-color .2s,box-shadow .2s}
+  input:focus{border-color:rgba(103,232,249,.6);box-shadow:0 0 0 3px rgba(34,211,238,.14)}
+  button{background:linear-gradient(120deg,#67e8f9,#22d3ee 40%,#a78bfa);color:#04121c;
+    border:0;border-radius:11px;padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer;
+    transition:transform .12s, box-shadow .25s;box-shadow:0 5px 18px rgba(34,211,238,.3)}
+  button:active{transform:scale(.97)}
+  button:hover{box-shadow:0 7px 26px rgba(34,211,238,.5)}
+
+  .cards{display:grid;grid-template-columns:repeat(5,1fr);gap:14px}
+  @media (max-width:1100px){.cards{grid-template-columns:repeat(2,1fr)}}
+  .card{position:relative;overflow:hidden;background:var(--glass);border:1px solid var(--line-soft);
+    border-radius:18px;padding:16px 18px;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+    box-shadow:0 10px 30px rgba(0,0,0,.28);transition:border-color .25s, transform .2s}
+  .card:hover{border-color:rgba(120,190,255,.3);transform:translateY(-2px)}
+  .card::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .3s;
+    background:radial-gradient(360px 140px at var(--mx,50%) var(--my,0%),rgba(120,180,255,.14),transparent 60%)}
+  .card:hover::after{opacity:1}
+  .card .lbl{font-size:12px;color:var(--sub);display:flex;align-items:center;gap:7px}
+  .card .num{font-size:30px;font-weight:800;margin-top:6px;letter-spacing:.5px;font-variant-numeric:tabular-nums;
+    background:linear-gradient(120deg,#dff6ff,#a5b4fc);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .card.ok .num{background:linear-gradient(120deg,#6ee7b7,#34d399);-webkit-background-clip:text;background-clip:text}
+  .card.deny .num{background:linear-gradient(120deg,#fca5a5,#f87171);-webkit-background-clip:text;background-clip:text}
+  .card.late .num{background:linear-gradient(120deg,#fcd34d,#fbbf24);-webkit-background-clip:text;background-clip:text}
+  .card.alert .num{background:linear-gradient(120deg,#fdba74,#fb923c);-webkit-background-clip:text;background-clip:text}
+
+  .row{display:grid;grid-template-columns:1.9fr 1fr;gap:16px}
+  @media (max-width:1000px){.row{grid-template-columns:1fr}}
+  .panel{background:var(--glass);border:1px solid var(--line-soft);border-radius:18px;overflow:hidden;
+    backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);box-shadow:0 10px 30px rgba(0,0,0,.28)}
+  .panel h2{font-size:13.5px;margin:0;padding:14px 18px;border-bottom:1px solid var(--line-soft);
+    color:var(--sub);letter-spacing:.5px;display:flex;align-items:center;gap:9px}
+  .panel h2::before{content:"";width:4px;height:14px;border-radius:4px;background:var(--grad)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:10px 14px;text-align:left;border-bottom:1px solid rgba(255,255,255,.05);white-space:nowrap}
+  th{color:var(--sub);font-weight:500;position:sticky;top:0;background:rgba(10,14,26,.92);
+    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);font-size:12.5px}
+  tbody tr{transition:background .2s}
+  tbody tr:hover{background:rgba(120,180,255,.06)}
+  .scroll{max-height:430px;overflow:auto}
+  .scroll::-webkit-scrollbar{width:7px}
+  .scroll::-webkit-scrollbar-thumb{background:rgba(120,160,220,.22);border-radius:7px}
+  .tag{padding:3px 10px;border-radius:8px;font-size:12px;font-weight:600;display:inline-block}
+  .tag.ok{background:rgba(52,211,153,.14);color:var(--green);border:1px solid rgba(52,211,153,.28)}
+  .tag.deny{background:rgba(248,113,113,.14);color:var(--red);border:1px solid rgba(248,113,113,.28)}
+  .tag.late{background:rgba(251,191,36,.14);color:var(--amber);border:1px solid rgba(251,191,36,.28)}
+  .alert-item{padding:12px 18px;border-bottom:1px solid rgba(255,255,255,.05);font-size:13px;
+    display:flex;gap:12px;align-items:flex-start;transition:background .2s}
+  .alert-item:hover{background:rgba(120,180,255,.05)}
+  .alert-item .lv{flex:none;padding:3px 10px;border-radius:8px;font-size:11.5px;font-weight:700}
+  .lv0{background:rgba(56,189,248,.14);color:#38bdf8;border:1px solid rgba(56,189,248,.3)}
+  .lv1{background:rgba(251,191,36,.16);color:var(--amber);border:1px solid rgba(251,191,36,.32)}
+  .lv2{background:rgba(251,146,60,.18);color:var(--orange);border:1px solid rgba(251,146,60,.34)}
+  .lv3{background:rgba(248,113,113,.2);color:var(--red);border:1px solid rgba(248,113,113,.4);
+    box-shadow:0 0 16px rgba(248,113,113,.18)}
+  .muted{color:var(--sub)}
+  .empty{padding:34px 16px;color:var(--sub);font-size:13px;text-align:center}
+  footer{padding:14px 22px 26px;font-size:11.5px;color:rgba(147,161,184,.65);text-align:center}
+  /* 新行进入动画 */
+  .row-in{animation:rowIn .45s ease}
+  @keyframes rowIn{from{opacity:0;transform:translateY(-6px);background:rgba(34,211,238,.12)}
+                   to{opacity:1;transform:translateY(0);background:transparent}}
 </style>
 </head>
 <body>
+<div class="aurora"><i></i><i></i><i></i></div>
+<div class="grid"></div>
+
 <header>
-  <h1>🧪 试剂柜 Web 管控中心</h1>
+  <div class="brand">
+    <div class="logo">🧪</div>
+    <div>
+      <h1>试剂柜 Web 管控中心</h1>
+      <div class="sub">分级安防 · 实时台账 · 告警监控</div>
+    </div>
+  </div>
   <div class="badges">
     <span class="badge" id="bBroker">Broker：连接中…</span>
     <span class="badge" id="bDev">设备：等待数据</span>
@@ -65,18 +148,18 @@
 </header>
 
 <main>
-  <div style="display:flex; gap:10px; align-items:center; font-size:13px" class="muted">
-    订阅主题前缀：
+  <div class="toolbar">
+    订阅主题前缀
     <input id="prefix" value="reagentcab/#" style="width:220px">
     <button onclick="resubscribe()">重新订阅</button>
   </div>
 
   <div class="cards">
-    <div class="card"><div class="lbl">台账总数</div><div class="num" id="cTotal">0</div></div>
-    <div class="card"><div class="lbl">按时完成</div><div class="num" style="color:var(--ok)" id="cOk">0</div></div>
-    <div class="card"><div class="lbl">策略拒绝</div><div class="num" style="color:var(--bad)" id="cDeny">0</div></div>
-    <div class="card"><div class="lbl">超时/异常</div><div class="num" style="color:var(--warn)" id="cLate">0</div></div>
-    <div class="card"><div class="lbl">告警条数</div><div class="num" style="color:#fb923c" id="cAlert">0</div></div>
+    <div class="card"><div class="lbl">📋 台账总数</div><div class="num" id="cTotal">0</div></div>
+    <div class="card ok"><div class="lbl">✅ 按时完成</div><div class="num" id="cOk">0</div></div>
+    <div class="card deny"><div class="lbl">⛔ 策略拒绝</div><div class="num" id="cDeny">0</div></div>
+    <div class="card late"><div class="lbl">⏱ 超时/异常</div><div class="num" id="cLate">0</div></div>
+    <div class="card alert"><div class="lbl">🔔 告警条数</div><div class="num" id="cAlert">0</div></div>
   </div>
 
   <div class="row">
@@ -106,7 +189,7 @@
 const BROKER_WSS = "wss://broker.emqx.io:8084/mqtt";
 const clientId = "WebCtl-" + Math.random().toString(16).slice(2, 10);
 let client = null, curPrefix = "reagentcab/#";
-const seen = new Set();          // record_id 去重
+const seen = new Set();
 let stats = { total: 0, ok: 0, deny: 0, late: 0, alert: 0 };
 let lastSeen = null;
 
@@ -176,6 +259,7 @@ function addRecord(r) {
   if (empty) empty.parentElement.remove();
 
   const tr = document.createElement("tr");
+  tr.className = "row-in";
   tr.innerHTML = `
     <td>#${r.record_id}</td>
     <td>${r.time || r.boot_ms + "ms"}</td>
@@ -197,12 +281,21 @@ function addAlert(a) {
 
   const lv = Math.min(Math.max(a.level | 0, 0), 3);
   const div = document.createElement("div");
-  div.className = "alert-item";
+  div.className = "alert-item row-in";
   div.innerHTML = `<span class="lv lv${lv}">${LEVELS[lv]}</span>
                    <span>${a.msg || ""}</span>
                    <span class="muted" style="margin-left:auto">${Math.round((a.ts_ms || 0) / 1000)}s</span>`;
   box.prepend(div);
 }
+
+/* 卡片聚光跟随 */
+document.querySelectorAll(".card").forEach(card => {
+  card.addEventListener("pointermove", e => {
+    const r = card.getBoundingClientRect();
+    card.style.setProperty("--mx", (e.clientX - r.left) + "px");
+    card.style.setProperty("--my", (e.clientY - r.top) + "px");
+  });
+});
 
 connect();
 </script>
