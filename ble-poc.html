@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>试剂柜 BLE POC 测试页</title>
+<style>
+  body { font-family: system-ui, "Microsoft YaHei", sans-serif; max-width: 720px; margin: 0 auto; padding: 12px; }
+  h1 { font-size: 1.2em; }
+  button { margin: 3px 2px; padding: 8px 12px; font-size: 14px; }
+  #state { font-size: 1.3em; font-weight: bold; padding: 10px; background: #f0f4ff; border-radius: 8px; }
+  #lease { font-size: 2em; color: #c0392b; font-weight: bold; }
+  #log { background: #1e1e1e; color: #9fe89f; padding: 10px; border-radius: 8px;
+         font-family: Consolas, monospace; font-size: 12px; height: 320px; overflow-y: auto; white-space: pre-wrap; }
+  .row { margin: 8px 0; padding: 8px; border: 1px solid #ddd; border-radius: 8px; }
+  .hint { color: #888; font-size: 12px; }
+  input, select { padding: 5px; font-size: 14px; }
+</style>
+</head>
+<body>
+<h1>🧪 试剂柜 BLE POC 测试页（Web Bluetooth）</h1>
+<div id="state">未连接</div>
+<div>监督人 lease 倒计时：<span id="lease">--</span></div>
+<div class="hint">T-06c 口径：连接发起 → 挑战-应答完成 ≤ 3000ms　｜　对齐 GATT 契约 FFE0~FFE6（模块9）</div>
+
+<div class="row">
+  <b>① 连接区</b><br>
+  <button id="btnConn">扫描并连接 ReagentCab</button>
+  <button id="btnDisc">断开</button>
+  <label><input type="checkbox" id="autoEcho" checked> 自动回应答</label>
+</div>
+
+<div class="row">
+  <b>② 身份区（挑战-应答）</b><br>
+  <button id="btnOp">取用人认证 (role=0)</button>
+  <button id="btnSup">监督人授权 (role=1)</button>
+  <button id="btnEcho">立即回写挑战</button>
+  <button id="btnSlow">12秒后回写（超时负例）</button>
+  <button id="btnReplay">发旧应答（重放负例）</button>
+</div>
+
+<div class="row">
+  <b>③ 试剂区</b><br>
+  <select id="reagent">
+    <option value="1">1 乙醇（普通/FP）</option>
+    <option value="2">2 丙酮（普通/FP）</option>
+    <option value="3">3 浓硫酸（高危/FP+DUAL）</option>
+    <option value="4">4 高锰酸钾（高危/FP+DUAL）</option>
+  </select>
+  <button id="btnReagent">写 REAGENT_SEL</button>
+</div>
+
+<div class="row">
+  <b>④ 绑定（先在串口敲 b 开窗口）</b><br>
+  人员编号: <input id="bindUid" type="number" value="2" min="1" max="3" style="width:60px">
+  <button id="btnBind">写 BIND_REQ</button>
+</div>
+
+<div class="row"><b>日志</b> <button id="btnClear" style="float:right">清空</button><div id="log"></div></div>
+
+<script>
+const SVC = 0xFFE0, AUTH_REQ = 0xFFE1, CHALLENGE = 0xFFE2, AUTH_RESP = 0xFFE3,
+      REAGENT_SEL = 0xFFE4, STATUS = 0xFFE5, BIND_REQ = 0xFFE6;
+const $ = id => document.getElementById(id);
+const logEl = $('log');
+function log(m) {
+  const t = new Date();
+  const ts = t.toTimeString().slice(0,8) + '.' + String(t.getMilliseconds()).padStart(3,'0');
+  logEl.textContent += `[${ts}] ${m}\n`;
+  logEl.scrollTop = logEl.scrollHeight;
+}
+function hex(u8) { return [...u8].map(b => b.toString(16).padStart(2,'0')).join(' ').toUpperCase(); }
+
+let dev = null, gatt = null, svc = null;
+let chChallenge, chStatus, chAuthReq, chAuthResp, chReagent, chBind;
+let lastChallenge = null, prevResp = null;
+let tConnStart = 0, tConnDone = 0, tAuthReq = 0;
+let leaseTimer = null;
+
+async function connect() {
+  try {
+    dev = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: 'ReagentCab' }],
+      optionalServices: [SVC]
+    });
+    log('已选择设备: ' + dev.name);
+    dev.addEventListener('gattserverdisconnected', onDisconnected);
+    tConnStart = performance.now();
+    $('state').textContent = '连接中…';
+    gatt = await dev.gatt.connect();
+    tConnDone = performance.now();
+    log(`GATT 已连接，耗时 ${(tConnDone - tConnStart).toFixed(0)}ms`);
+    svc = await gatt.getPrimaryService(SVC);
+    [chAuthReq, chChallenge, chAuthResp, chReagent, chStatus, chBind] = await Promise.all([
+      svc.getCharacteristic(AUTH_REQ), svc.getCharacteristic(CHALLENGE),
+      svc.getCharacteristic(AUTH_RESP), svc.getCharacteristic(REAGENT_SEL),
+      svc.getCharacteristic(STATUS), svc.getCharacteristic(BIND_REQ)
+    ]);
+    await chChallenge.startNotifications();
+    chChallenge.addEventListener('characteristicvaluechanged', onChallenge);
+    await chStatus.startNotifications();
+    chStatus.addEventListener('characteristicvaluechanged', onStatus);
+    $('state').textContent = '已连接 ' + dev.name + '（GATT 就绪）';
+    log('✓ GATT 就绪，FFE0~FFE6 特征全部获取');
+  } catch (e) {
+    $('state').textContent = '连接失败';
+    log('✗ ' + e.message);
+  }
+}
+
+function onDisconnected() {
+  $('state').textContent = '已断开';
+  log('✗ gattserverdisconnected（若正处 lease：断连即失效）');
+  stopLease();
+}
+
+async function onChallenge(e) {
+  const v = e.target.value;
+  lastChallenge = new Uint8Array(v.buffer, v.byteOffset, v.byteLength);  // DataView→Uint8Array
+  log('收到挑战(FFE2): ' + hex(lastChallenge));
+  if ($('autoEcho').checked) {
+    await echoNow();
+  } else {
+    log('（自动回应答已关 → 用"立即回写"/"12秒后回写"手动测）');
+  }
+}
+
+async function echoNow() {
+  if (!lastChallenge) return log('尚无挑战');
+  try {
+    prevResp = lastChallenge;
+    await chAuthResp.writeValue(prevResp);
+    log('应答已写入(FFE3)，等待 STATUS…');
+  } catch (e) {
+    log('✗ 应答写入失败: ' + (e.message || e));
+  }
+}
+
+function onStatus(e) {
+  const s = new TextDecoder().decode(e.target.value);
+  log('状态(FFE5): ' + s);
+  $('state').textContent = s;
+  if (s.startsWith('AUTH_OK') || s.startsWith('SUPERVISOR_OK')) {
+    const total = (performance.now() - tConnStart).toFixed(0);
+    const auth = (performance.now() - tAuthReq).toFixed(0);
+    log(`⏱ 计时：认证耗时 ${auth}ms；连接→应答完成(T-06c口径) ${total}ms ${total <= 3000 ? '✓达标' : '✗超3s'}`);
+    if (s.startsWith('SUPERVISOR_OK')) {
+      const m = s.match(/lease=(\d+)/);
+      startLease(m ? +m[1] : 60);
+    }
+  } else if (s.startsWith('AUTH_FAIL') || s.startsWith('BIND_FAIL')) {
+    log('→ 认证失败（若正按计划跑负例则符合预期）');
+  } else if (s.startsWith('LEASE,sec=')) {
+    $('lease').textContent = s.split('=')[1] + 's';
+  } else if (s.startsWith('LEASE,')) {
+    stopLease(); $('lease').textContent = s.split(',')[1];
+  } else if (s.startsWith('REAGENT') || s.startsWith('BIND_OK')) {
+    log('→ 已记录');
+  }
+}
+
+function startLease(sec) {
+  stopLease();
+  let left = sec;
+  $('lease').textContent = left + 's';
+  leaseTimer = setInterval(() => {
+    left--;
+    $('lease').textContent = left > 0 ? left + 's' : '0s（等设备确认过期）';
+    if (left <= 0) stopLease();
+  }, 1000);
+}
+function stopLease() { if (leaseTimer) { clearInterval(leaseTimer); leaseTimer = null; } }
+
+async function authReq(role) {
+  if (!chAuthReq) return log('未连接');
+  try {
+    tAuthReq = performance.now();
+    await chAuthReq.writeValue(Uint8Array.of(role));
+    log(`AUTH_REQ 已写入 role=${role ? '监督人' : '取用人'}，等待挑战…`);
+  } catch (e) {
+    log('✗ 写入失败: ' + (e.message || e) + ' （若提示 security/auth：Windows 正在配对，稍等或到 设置→蓝牙 里完成配对）');
+  }
+}
+
+$('btnConn').onclick = () => connect().catch(e => log('✗ 连接异常: ' + (e.message || e)));
+$('btnDisc').onclick = () => { if (gatt?.connected) gatt.disconnect(); };
+$('btnOp').onclick = () => authReq(0);
+$('btnSup').onclick = () => authReq(1);
+$('btnEcho').onclick = echoNow;
+$('btnSlow').onclick = () => {
+  if (!lastChallenge) return log('尚无挑战');
+  log('12 秒后自动回写（挑战 TTL=10s，预期 AUTH_FAIL,expired）…');
+  setTimeout(echoNow, 12000);
+};
+$('btnReplay').onclick = async () => {
+  if (!prevResp) return log('尚无可重放的旧应答');
+  await chAuthResp.writeValue(prevResp);
+  log('旧应答已写入（预期 AUTH_FAIL,replay + 设备告警"重放攻击"）');
+};
+$('btnReagent').onclick = async () => {
+  await chReagent.writeValue(Uint8Array.of(+$('reagent').value));
+  log('REAGENT_SEL 已写入 ' + $('reagent').value);
+};
+$('btnBind').onclick = async () => {
+  await chBind.writeValue(Uint8Array.of(+$('bindUid').value));
+  log('BIND_REQ 已写入 uid=' + $('bindUid').value + '（需串口已敲 b）');
+};
+$('btnClear').onclick = () => logEl.textContent = '';
+
+log('就绪。提示：Android Chrome 需开定位服务；本页须经 HTTPS 或 localhost 打开');
+</script>
+</body>
+</html>

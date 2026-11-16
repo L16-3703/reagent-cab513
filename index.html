@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>试剂柜 Web 管控中心</title>
+<script src="mqtt.min.js"></script>
+<style>
+  :root {
+    --bg: #0f172a; --card: #1e293b; --line: #334155; --text: #e2e8f0;
+    --sub: #94a3b8; --ok: #22c55e; --warn: #f59e0b; --bad: #ef4444; --info: #38bdf8;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font-family: system-ui, "Microsoft YaHei", sans-serif; }
+  header { display: flex; align-items: center; justify-content: space-between;
+           padding: 14px 20px; border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 18px; margin: 0; }
+  .badges { display: flex; gap: 10px; font-size: 13px; }
+  .badge { padding: 4px 12px; border-radius: 999px; background: #0b1220;
+           border: 1px solid var(--line); color: var(--sub); }
+  .badge.on { color: var(--ok); border-color: var(--ok); }
+  .badge.off { color: var(--bad); border-color: var(--bad); }
+  main { padding: 16px 20px; display: grid; gap: 16px; }
+  .cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .card .num { font-size: 26px; font-weight: 700; margin-top: 2px; }
+  .card .lbl { font-size: 12px; color: var(--sub); }
+  .row { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+  @media (max-width: 1000px) { .row { grid-template-columns: 1fr; } .cards { grid-template-columns: repeat(2,1fr); } }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .panel h2 { font-size: 14px; margin: 0; padding: 10px 14px; border-bottom: 1px solid var(--line); color: var(--sub); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid #263244; white-space: nowrap; }
+  th { color: var(--sub); font-weight: 500; position: sticky; top: 0; background: var(--card); }
+  .scroll { max-height: 420px; overflow: auto; }
+  .tag { padding: 2px 8px; border-radius: 6px; font-size: 12px; }
+  .tag.ok { background: rgba(34,197,94,.15); color: var(--ok); }
+  .tag.deny { background: rgba(239,68,68,.15); color: var(--bad); }
+  .tag.late { background: rgba(245,158,11,.15); color: var(--warn); }
+  .alert-item { padding: 10px 14px; border-bottom: 1px solid #263244; font-size: 13px; display: flex; gap: 10px; }
+  .alert-item .lv { flex: none; padding: 2px 8px; border-radius: 6px; font-size: 12px; }
+  .lv0 { background: rgba(56,189,248,.15); color: var(--info); }
+  .lv1 { background: rgba(245,158,11,.18); color: var(--warn); }
+  .lv2 { background: rgba(249,115,22,.2); color: #fb923c; }
+  .lv3 { background: rgba(239,68,68,.22); color: var(--bad); }
+  .muted { color: var(--sub); }
+  .empty { padding: 26px 14px; color: var(--sub); font-size: 13px; text-align: center; }
+  footer { padding: 10px 20px 24px; font-size: 12px; color: var(--sub); }
+  input { background: #0b1220; border: 1px solid var(--line); color: var(--text);
+          border-radius: 8px; padding: 5px 10px; font-size: 13px; }
+  button { background: #2563eb; color: #fff; border: 0; border-radius: 8px;
+           padding: 6px 14px; font-size: 13px; cursor: pointer; }
+  button:hover { background: #1d4ed8; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🧪 试剂柜 Web 管控中心</h1>
+  <div class="badges">
+    <span class="badge" id="bBroker">Broker：连接中…</span>
+    <span class="badge" id="bDev">设备：等待数据</span>
+    <span class="badge" id="bSeen">最近上报：--</span>
+  </div>
+</header>
+
+<main>
+  <div style="display:flex; gap:10px; align-items:center; font-size:13px" class="muted">
+    订阅主题前缀：
+    <input id="prefix" value="reagentcab/#" style="width:220px">
+    <button onclick="resubscribe()">重新订阅</button>
+  </div>
+
+  <div class="cards">
+    <div class="card"><div class="lbl">台账总数</div><div class="num" id="cTotal">0</div></div>
+    <div class="card"><div class="lbl">按时完成</div><div class="num" style="color:var(--ok)" id="cOk">0</div></div>
+    <div class="card"><div class="lbl">策略拒绝</div><div class="num" style="color:var(--bad)" id="cDeny">0</div></div>
+    <div class="card"><div class="lbl">超时/异常</div><div class="num" style="color:var(--warn)" id="cLate">0</div></div>
+    <div class="card"><div class="lbl">告警条数</div><div class="num" style="color:#fb923c" id="cAlert">0</div></div>
+  </div>
+
+  <div class="row">
+    <div class="panel">
+      <h2>取用台账（实时）</h2>
+      <div class="scroll">
+        <table>
+          <thead><tr>
+            <th>编号</th><th>设备时间</th><th>取用人</th><th>试剂</th>
+            <th>等级</th><th>模式</th><th>监督人</th><th>结果</th>
+          </tr></thead>
+          <tbody id="tbRecords"><tr><td colspan="8" class="empty">等待设备上报…（做一次取用即可看到）</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="panel">
+      <h2>告警队列（实时）</h2>
+      <div class="scroll" id="alertsBox">
+        <div class="empty">暂无告警</div>
+      </div>
+    </div>
+  </div>
+</main>
+<footer>数据源：MQTT broker.emqx.io ｜ 主题 reagentcab/&lt;设备&gt;/{record,status,alert} ｜ record_id 幂等去重</footer>
+
+<script>
+const BROKER_WSS = "wss://broker.emqx.io:8084/mqtt";
+const clientId = "WebCtl-" + Math.random().toString(16).slice(2, 10);
+let client = null, curPrefix = "reagentcab/#";
+const seen = new Set();          // record_id 去重
+let stats = { total: 0, ok: 0, deny: 0, late: 0, alert: 0 };
+let lastSeen = null;
+
+const $ = id => document.getElementById(id);
+const LEVELS = ["普通", "中等", "严重", "紧急"];
+
+function setBadge(el, text, cls) {
+  el.textContent = text;
+  el.className = "badge " + (cls || "");
+  if (cls === "on") el.classList.add("on");
+  if (cls === "off") el.classList.add("off");
+}
+
+function connect() {
+  client = mqtt.connect(BROKER_WSS, {
+    clientId, clean: true, connectTimeout: 8000, reconnectPeriod: 5000,
+  });
+  client.on("connect", () => {
+    setBadge($("bBroker"), "Broker：已连接", "on");
+    client.subscribe(curPrefix, { qos: 1 });
+  });
+  client.on("reconnect", () => setBadge($("bBroker"), "Broker：重连中…", ""));
+  client.on("close", () => setBadge($("bBroker"), "Broker：已断开", "off"));
+  client.on("error", e => console.warn("mqtt error", e));
+  client.on("message", onMsg);
+}
+
+function resubscribe() {
+  curPrefix = $("prefix").value.trim() || "reagentcab/#";
+  if (client && client.connected) client.subscribe(curPrefix, { qos: 1 });
+  console.log("subscribe", curPrefix);
+}
+
+function onMsg(topic, payload) {
+  let data = null;
+  try { data = JSON.parse(payload.toString()); } catch (e) { return; }
+  lastSeen = new Date();
+  setBadge($("bSeen"), "最近上报：" + lastSeen.toTimeString().slice(0, 8), "on");
+
+  if (topic.endsWith("/status")) {
+    setBadge($("bDev"), "设备：在线（uptime " + Math.round((data.uptime_ms || 0) / 1000) + "s）", "on");
+  } else if (topic.endsWith("/record")) {
+    setBadge($("bDev"), "设备：在线", "on");
+    addRecord(data);
+  } else if (topic.endsWith("/alert")) {
+    addAlert(data);
+  }
+}
+
+function addRecord(r) {
+  if (r.record_id != null) {
+    if (seen.has(r.record_id)) return;
+    seen.add(r.record_id);
+  }
+  stats.total++;
+  let res, cls;
+  if (r.denied) { stats.deny++; res = "拒绝"; cls = "deny"; }
+  else if (r.success) { stats.ok++; res = "完成"; cls = "ok"; }
+  else { stats.late++; res = "超时/异常"; cls = "late"; }
+  $("cTotal").textContent = stats.total;
+  $("cOk").textContent = stats.ok;
+  $("cDeny").textContent = stats.deny;
+  $("cLate").textContent = stats.late;
+
+  const tb = $("tbRecords");
+  const empty = tb.querySelector(".empty");
+  if (empty) empty.parentElement.remove();
+
+  const tr = document.createElement("tr");
+  tr.innerHTML = `
+    <td>#${r.record_id}</td>
+    <td>${r.time || r.boot_ms + "ms"}</td>
+    <td>${r.operator || "-"}</td>
+    <td>${r.reagent || "-"}</td>
+    <td>${r.level === 1 ? "高危" : "普通"}</td>
+    <td>${r.mode === 1 ? "双人" : "普通"}</td>
+    <td>${r.second || "-"}</td>
+    <td><span class="tag ${cls}">${res}</span></td>`;
+  tb.prepend(tr);
+}
+
+function addAlert(a) {
+  stats.alert++;
+  $("cAlert").textContent = stats.alert;
+  const box = $("alertsBox");
+  const empty = box.querySelector(".empty");
+  if (empty) empty.remove();
+
+  const lv = Math.min(Math.max(a.level | 0, 0), 3);
+  const div = document.createElement("div");
+  div.className = "alert-item";
+  div.innerHTML = `<span class="lv lv${lv}">${LEVELS[lv]}</span>
+                   <span>${a.msg || ""}</span>
+                   <span class="muted" style="margin-left:auto">${Math.round((a.ts_ms || 0) / 1000)}s</span>`;
+  box.prepend(div);
+}
+
+connect();
+</script>
+</body>
+</html>
