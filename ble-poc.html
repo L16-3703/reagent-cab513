@@ -112,7 +112,7 @@
   .field{display:flex;gap:10px;align-items:center}
   .field .grow{flex:1}
   /* 开关（独立胶囊行） */
-  .switch{display:flex;align-items:center;gap:12px;margin-top:12px;padding:11px 16px;
+  .switch{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:12px;padding:11px 16px;
     border-radius:12px;background:rgba(8,12,24,.5);border:1px solid var(--line-soft);
     color:var(--text);font-size:14px;cursor:pointer;user-select:none;white-space:nowrap;
     width:100%;transition:border-color .2s, background .2s}
@@ -157,8 +157,6 @@
     <span class="label">监督人 lease 倒计时</span>
     <span id="lease">--</span>
   </div>
-  <div class="hint">T-06c 口径：连接发起 → 挑战-应答完成 ≤ 3000ms　｜　GATT 契约 FFE0~FFE6</div>
-
   <section class="card">
     <h2>连接</h2>
     <div class="btns">
